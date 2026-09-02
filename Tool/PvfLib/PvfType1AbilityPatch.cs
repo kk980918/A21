@@ -176,6 +176,142 @@ namespace PvfLib
             return true;
         }
 
+        // [warlike] 70 — Type=3 tag + Type=0 int, not a `*` percent triple.
+        public static bool TryReplaceTaggedInt(
+            byte[] raw,
+            Func<int, string> resolveString,
+            string tagName,
+            int newValue,
+            out byte[] patched,
+            out string error)
+        {
+            patched = null;
+            error = null;
+
+            if (raw == null || raw.Length < 10 || raw.Length % 5 != 0)
+            {
+                error = "Type1 payload is missing or not 5-byte aligned";
+                return false;
+            }
+
+            if (resolveString == null)
+            {
+                error = "string resolver is required";
+                return false;
+            }
+
+            var want = NormalizeStatName(tagName);
+            if (string.IsNullOrEmpty(want))
+            {
+                error = "tag name is empty";
+                return false;
+            }
+
+            if (newValue < MinPercent || newValue > MaxPercent)
+            {
+                error = $"value {newValue} is outside {MinPercent}..{MaxPercent}";
+                return false;
+            }
+
+            var matchOffset = -1;
+            var tokens = raw.Length / 5;
+            for (var i = 0; i + 1 < tokens; i++)
+            {
+                if (raw[i * 5] != 3)
+                    continue;
+
+                var name = NormalizeStatName(
+                    resolveString(BitConverter.ToInt32(raw, i * 5 + 1)));
+                if (!string.Equals(name, want, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var valueType = raw[(i + 1) * 5];
+                if (valueType == 2)
+                {
+                    error = $"tag {want} is followed by a float slot";
+                    return false;
+                }
+
+                if (valueType != 0)
+                    continue;
+
+                if (matchOffset >= 0)
+                {
+                    error = $"tag {want} matched more than once";
+                    return false;
+                }
+
+                matchOffset = (i + 1) * 5 + 1;
+            }
+
+            if (matchOffset < 0)
+            {
+                error = $"tag {want} integer slot was not found";
+                return false;
+            }
+
+            patched = (byte[])raw.Clone();
+            WriteInt32LittleEndian(patched, matchOffset, newValue);
+            return true;
+        }
+
+        public static bool TryReplaceTaggedInt(
+            PvfArchive archive,
+            string relativePath,
+            string tagName,
+            int newValue,
+            out string error)
+        {
+            error = null;
+            if (archive == null)
+            {
+                error = "archive is required";
+                return false;
+            }
+
+            var index = archive.FindFileIndex(relativePath);
+            if (index < 0)
+            {
+                error = "PVF file not found: " + relativePath;
+                return false;
+            }
+
+            if (archive.Files[index].Entry.DataType != 1)
+            {
+                error = "file is not Type1: " + relativePath;
+                return false;
+            }
+
+            var raw = archive.GetFileRawData(index);
+            if (!TryReplaceTaggedInt(
+                raw, archive.ResolveString, tagName, newValue, out var patched, out error))
+            {
+                return false;
+            }
+
+            archive.SetFileRawData(index, patched);
+            return true;
+        }
+
+        public static bool TryReplaceValue(
+            PvfArchive archive,
+            string relativePath,
+            string name,
+            int newValue,
+            out string error)
+        {
+            if (TryReplacePercent(archive, relativePath, name, newValue, out error))
+                return true;
+
+            if (error != null
+                && error.IndexOf("was not found", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return TryReplaceTaggedInt(archive, relativePath, name, newValue, out error);
+            }
+
+            return false;
+        }
+
         private static void WriteInt32LittleEndian(byte[] dest, int offset, int value)
         {
             dest[offset] = (byte)value;

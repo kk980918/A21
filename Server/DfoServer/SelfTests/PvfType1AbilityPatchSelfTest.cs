@@ -8,6 +8,7 @@ namespace DfoServer.SelfTests
     public static class PvfType1AbilityPatchSelfTest
     {
         private const string TauArmyPath = "monster/Tau/TauArmy.mob";
+        private const string TauGuardPath = "monster/Tau/TauGuard.mob";
 
         public static int Run()
         {
@@ -22,7 +23,9 @@ namespace DfoServer.SelfTests
             VerifyRejectsDuplicateStat(ref failures);
             VerifyRejectsOutOfRange(ref failures);
             VerifyRejectsUnalignedPayload(ref failures);
+            VerifyPatchesWarlikeTaggedInt(ref failures);
             VerifyLiveTauArmy(ref failures);
+            VerifyLiveTauGuardWarlike(ref failures);
 
             Console.WriteLine(failures == 0
                 ? "PVF_TYPE1_ABILITY_PATCH selftest passed"
@@ -186,6 +189,23 @@ namespace DfoServer.SelfTests
                 ref failures);
         }
 
+        private static void VerifyPatchesWarlikeTaggedInt(ref int failures)
+        {
+            var strings = new Dictionary<int, string> { [1] = "[warlike]" };
+            var raw = Concat(Token(3, 1), Token(0, 70), Token(2, FloatBits(30f)));
+            Check(
+                "patches warlike 70 to 80 and leaves the following float",
+                PvfType1AbilityPatch.TryReplaceTaggedInt(
+                    raw, id => strings[id], "warlike", 80, out var patched, out var error)
+                    && error == null
+                    && TypesEqual(raw, patched)
+                    && CountChangedTokens(raw, patched) == 1
+                    && ReadInt(patched, 6) == 80
+                    && patched[5] == 0
+                    && patched[10] == 2,
+                ref failures);
+        }
+
         private static void VerifyLiveTauArmy(ref int failures)
         {
             var pvfPath = Environment.GetEnvironmentVariable("PVF_ARCHIVE_PATH");
@@ -295,6 +315,58 @@ namespace DfoServer.SelfTests
             }
         }
 
+        private static void VerifyLiveTauGuardWarlike(ref int failures)
+        {
+            var pvfPath = Environment.GetEnvironmentVariable("PVF_ARCHIVE_PATH");
+            if (string.IsNullOrWhiteSpace(pvfPath) || !File.Exists(pvfPath))
+            {
+                Console.WriteLine("live TauGuard warlike skipped: PVF_ARCHIVE_PATH is not set");
+                return;
+            }
+
+            try
+            {
+                using var archive = PvfArchive.Open(pvfPath);
+                var index = archive.FindFileIndex(TauGuardPath);
+                var raw = index >= 0 ? archive.GetFileRawData(index) : null;
+                Check("live TauGuard raw exists", raw != null && raw.Length >= 10, ref failures);
+                if (raw == null)
+                    return;
+
+                Check(
+                    "live TauGuard official warlike is 70",
+                    FindTaggedInt(raw, archive.ResolveString, "[warlike]") == 70,
+                    ref failures);
+
+                Check(
+                    "live TauGuard warlike 70 -> 80 keeps types",
+                    PvfType1AbilityPatch.TryReplaceTaggedInt(
+                        archive, TauGuardPath, "warlike", 80, out var error)
+                        && error == null
+                        && TypesEqual(raw, archive.GetFileRawData(index))
+                        && CountChangedTokens(raw, archive.GetFileRawData(index)) == 1
+                        && FindTaggedInt(
+                            archive.GetFileRawData(index), archive.ResolveString, "[warlike]") == 80
+                        && FindAbilityInt(
+                            archive.GetFileRawData(index), archive.ResolveString, "[HP MAX]")
+                            == FindAbilityInt(raw, archive.ResolveString, "[HP MAX]"),
+                    ref failures);
+
+                archive.RevertFile(index);
+                Check(
+                    "live TauGuard revert restores warlike 70",
+                    FindTaggedInt(
+                        archive.GetFileRawData(index), archive.ResolveString, "[warlike]") == 70
+                        && !archive.IsFileModified(index),
+                    ref failures);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("live TauGuard warlike failed: " + ex.Message);
+                failures++;
+            }
+        }
+
         private static Dictionary<int, string> AbilityStrings()
         {
             return new Dictionary<int, string>
@@ -346,6 +418,24 @@ namespace DfoServer.SelfTests
                     return (i + 2) * 5 + 1;
             }
             return -1;
+        }
+
+        private static int FindTaggedInt(
+            byte[] raw,
+            Func<int, string> resolve,
+            string tagName)
+        {
+            var want = NormalizeStatName(tagName);
+            var tokens = raw.Length / 5;
+            for (var i = 0; i + 1 < tokens; i++)
+            {
+                if (raw[i * 5] != 3 || raw[(i + 1) * 5] != 0)
+                    continue;
+                var name = NormalizeStatName(resolve(BitConverter.ToInt32(raw, i * 5 + 1)));
+                if (string.Equals(name, want, StringComparison.OrdinalIgnoreCase))
+                    return ReadInt(raw, (i + 1) * 5 + 1);
+            }
+            return int.MinValue;
         }
 
         private static string NormalizeStatName(string name)
