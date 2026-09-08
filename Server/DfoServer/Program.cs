@@ -20,6 +20,7 @@ namespace DfoServer
             ("--selftest-packet-framing-bounds", SelfTests.PacketFramingBoundsSelfTest.Run),
             ("--selftest-a21-channel-protocol", SelfTests.A21ChannelProtocolSelfTest.Run),
             ("--selftest-a21-create-character-protocol", SelfTests.A21CreateCharacterProtocolSelfTest.Run),
+            ("--selftest-a21-party-protocol", SelfTests.A21PartyProtocolSelfTest.Run),
             ("--selftest-a21-knight-shield-deck", SelfTests.A21KnightShieldDeckSelfTest.Run),
             ("--selftest-a21-tutorial-protocol", SelfTests.A21TutorialProtocolSelfTest.Run),
             ("--selftest-story-book-info-replay", SelfTests.StoryBookInfoReplaySelfTest.Run),
@@ -62,6 +63,7 @@ namespace DfoServer
             ("--selftest-pvf-type1-ability-patch", SelfTests.PvfType1AbilityPatchSelfTest.Run),
             ("--selftest-sequential-dungeon-info-protocol", SelfTests.SequentialDungeonInfoProtocolSelfTest.Run),
             ("--selftest-licensed-dungeon", SelfTests.LicensedDungeonSelfTest.Run),
+            ("--selftest-experience-item-definition", SelfTests.ExperienceItemDefinitionSelfTest.Run),
         };
 
         // 顺序跑全部自测, 输出汇总表; 任一失败(或抛异常)退出码为 1。
