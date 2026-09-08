@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using DfoServer.Game.CharacterData;
 using DfoServer.Game.SelectCharacter;
+using DfoServer.Infrastructure;
 
 namespace DfoServer.Game.Dungeon
 {
@@ -24,12 +25,24 @@ namespace DfoServer.Game.Dungeon
         private const int LinkedChallengeRate = 100;
         private const int LinkedChallengeCondition = -1;
         private readonly SqliteCharacterStateRepository _repository;
+        private readonly AntonAwakeningDailyLootGuard _lootGuard;
+        private readonly AntonAwakeningDailyCardService _cardService;
 
         internal AntonNormalConquestApplicationService(
             SqliteCharacterStateRepository repository)
+            : this(repository, null, null)
+        {
+        }
+
+        internal AntonNormalConquestApplicationService(
+            SqliteCharacterStateRepository repository,
+            AntonAwakeningDailyLootGuard lootGuard,
+            AntonAwakeningDailyCardService cardService = null)
         {
             _repository = repository
                 ?? throw new ArgumentNullException(nameof(repository));
+            _lootGuard = lootGuard;
+            _cardService = cardService;
         }
 
         internal void ConfigureLinkedChallenge(DungeonRun run)
@@ -69,6 +82,7 @@ namespace DfoServer.Game.Dungeon
 
         internal bool TryApplyClear(
             int characterId,
+            int accountId,
             int dungeonId,
             out AntonNormalClearApplicationResult result)
         {
@@ -105,6 +119,49 @@ namespace DfoServer.Game.Dungeon
                 || state.Sequence.IndexOf(dungeonId) < 0)
             {
                 return false;
+            }
+
+            // Anton_Awakening 副本通关后立即标记"今日已领怪物掉落"
+            // 下次怪物死亡时 DropService 会跳过 GenerateAndRegister
+            if (_lootGuard != null
+                && AntonAwakeningDailyLootGuard.IsAntonAwakeningDungeon(dungeonId))
+            {
+                try
+                {
+                    _lootGuard.TryMarkLootClaimed(characterId, dungeonId);
+                }
+                catch (Exception ex)
+                {
+                    FileLogger.Log(
+                        $"[AntonAwakening] mark loot claimed failed "
+                        + $"character={characterId} dungeon={dungeonId}: {ex.Message}");
+                }
+            }
+
+            // 特殊翻牌：通关 247 今日首次时触发（4 张卡）
+            if (_cardService != null
+                && dungeonId == AntonAwakeningDailyCardService.FinalDungeonId)
+            {
+                try
+                {
+                    if (!_cardService.HasClaimedCardToday(characterId))
+                    {
+                        _cardService.TryMarkCardClaimed(characterId);
+                        var cards = _cardService.DrawCardRewards();
+                        // 物品发放：通过现有 InventoryRewardGrantService
+                        // 协议层（4 张卡的 UI）待实机验证后由后续 Task 处理
+                        if (cards.Count > 0)
+                        {
+                            FileLogger.Log(
+                                $"[AntonAwakening] special card drawn cid={characterId} "
+                                + $"cards=[{string.Join(",", cards)}]");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    FileLogger.Log($"[AntonAwakening] special card failed: {ex.Message}");
+                }
             }
 
             result = new AntonNormalClearApplicationResult(state, changes);

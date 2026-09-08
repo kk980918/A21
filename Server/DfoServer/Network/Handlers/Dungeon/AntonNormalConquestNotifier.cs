@@ -16,9 +16,14 @@ namespace DfoServer.Network.Handlers.Dungeon
         private readonly AntonNormalConquestNotificationSender _sender;
 
         internal AntonNormalConquestNotifier(
-            SqliteCharacterStateRepository repository)
+            SqliteCharacterStateRepository repository,
+            AntonAwakeningDailyLootGuard lootGuard = null,
+            AntonAwakeningDailyCardService cardService = null)
         {
-            _application = new AntonNormalConquestApplicationService(repository);
+            _application = new AntonNormalConquestApplicationService(
+                repository,
+                lootGuard,
+                cardService);
             _sender = new AntonNormalConquestNotificationSender();
         }
 
@@ -97,6 +102,7 @@ namespace DfoServer.Network.Handlers.Dungeon
             {
                 if (!_application.TryApplyClear(
                         session.Player.CharacterId,
+                        session.Account?.AccountId ?? 0,
                         run.DungeonId,
                         out var result))
                 {

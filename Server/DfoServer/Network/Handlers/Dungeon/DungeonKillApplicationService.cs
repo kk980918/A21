@@ -897,20 +897,38 @@ namespace DfoServer.Network.Handlers.Dungeon
             }
             else
             {
-                var dropRateLevel = run.HellMode
-                    ? dungeonBasisLevel
-                    : monster.Level;
-                var dropResult = _services.Drops.GenerateAndRegister(
-                    run,
-                    new MonsterDropRequest
-                    {
-                        DropRateLevel = dropRateLevel,
-                        MonsterType = rewardMonsterType,
-                        MonsterCode = monster.Code,
-                        DungeonBasisLevel = dungeonBasisLevel,
-                    });
-                generatedDrops = dropResult.Drops;
-                goldGained = dropResult.GoldAmount;
+                var skipLoot = _services.AntonLootGuard != null
+                    && AntonAwakeningDailyLootGuard.IsAntonAwakeningDungeon(run.DungeonId)
+                    && _services.AntonLootGuard.HasClaimedLootToday(
+                        session.Player.CharacterId,
+                        run.DungeonId);
+
+                List<DropInfo> drops;
+                int gold;
+                if (skipLoot)
+                {
+                    drops = new List<DropInfo>();
+                    gold = 0;
+                }
+                else
+                {
+                    var dropRateLevel = run.HellMode
+                        ? dungeonBasisLevel
+                        : monster.Level;
+                    var dropResult = _services.Drops.GenerateAndRegister(
+                        run,
+                        new MonsterDropRequest
+                        {
+                            DropRateLevel = dropRateLevel,
+                            MonsterType = rewardMonsterType,
+                            MonsterCode = monster.Code,
+                            DungeonBasisLevel = dungeonBasisLevel,
+                        });
+                    drops = dropResult.Drops;
+                    gold = dropResult.GoldAmount;
+                }
+                generatedDrops = drops;
+                goldGained = gold;
             }
 
             ExperienceGrantResult grant = null;
