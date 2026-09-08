@@ -21,9 +21,8 @@ namespace DfoServer.SelfTests
         {
             Console.WriteLine("=== ANTON_AWAKENING_DAILY_RESET selftest ===");
             var failures = 0;
-            VerifyFinalDungeonLocksAll(ref failures);
+            VerifyClearWritesLootCounter(ref failures);
             VerifyCrossDayResetClearsOnlyAntonAwakening(ref failures);
-            VerifyLimitConsumeAfterClear(ref failures);
             VerifyClearLeavesOtherDungeonsIntact(ref failures);
             Console.WriteLine(
                 failures == 0
@@ -39,40 +38,44 @@ namespace DfoServer.SelfTests
                 failures++;
         }
 
-        private static void VerifyFinalDungeonLocksAll(ref int failures)
+        private static void VerifyClearWritesLootCounter(ref int failures)
         {
             var tempDbPath = Path.Combine(
                 Path.GetTempPath(),
-                $"dfo_anton_awakening_{Guid.NewGuid():N}.db");
+                $"dfo_anton_awakening_loot_{Guid.NewGuid():N}.db");
             try
             {
                 var database = new GameDatabase(tempDbPath, ServerPaths.SchemaFilePath);
-                var repository = new SqliteCharacterStateRepository(database);
+                var dailyReset = new DailyResetService(database);
+                var lootGuard = new AntonAwakeningDailyLootGuard(
+                    database.ConnectionString,
+                    dailyReset);
                 const int accountId = 57100;
                 const int characterId = 57101;
-                SeedAccount(database, accountId, "anton-awakening-a");
-                SeedCharacter(database, characterId, accountId, "anton-awakening-c");
+                SeedAccount(database, accountId, "anton-awakening-loot-a");
+                SeedCharacter(database, characterId, accountId, "anton-awakening-loot-c");
 
-                // 前置：写入 243-246 的 unlocked + 247 completed
-                repository.UpsertDungeonPermission(characterId, 243, 1);
-                repository.UpsertDungeonPermission(characterId, 244, 1);
-                repository.UpsertDungeonPermission(characterId, 245, 1);
-                repository.UpsertDungeonPermission(characterId, 246, 1);
-                repository.UpsertDungeonPermission(characterId, 247, 2);
+                // 通关 243
+                var marked1 = lootGuard.TryMarkLootClaimed(characterId, 243);
+                Check("243 first mark succeeded", marked1, ref failures);
 
-                var preCount = repository.LoadDungeonPermissions(characterId)
-                    .Count(e => e.DungeonId >= 243 && e.DungeonId <= 247);
-                Check("pre: 243-247 all unlocked/completed", preCount == 5, ref failures);
+                // 再次通关 243：应返回 false（已标记）
+                var marked2 = lootGuard.TryMarkLootClaimed(characterId, 243);
+                Check("243 second mark returns false (already marked)", !marked2, ref failures);
 
-                // 模拟通关 247：清空 243-247 行
-                var deleted = repository.DeleteDungeonPermissions(
-                    characterId,
-                    new[] { 243, 244, 245, 246, 247 });
-                Check("cleared exactly 5 rows", deleted == 5, ref failures);
+                // 通关 244：应成功（独立副本）
+                var marked3 = lootGuard.TryMarkLootClaimed(characterId, 244);
+                Check("244 first mark succeeded", marked3, ref failures);
 
-                var postCount = repository.LoadDungeonPermissions(characterId)
-                    .Count(e => e.DungeonId >= 243 && e.DungeonId <= 247);
-                Check("post: 243-247 all cleared", postCount == 0, ref failures);
+                // 检查 has-claimed
+                Check("243 has claimed", lootGuard.HasClaimedLootToday(characterId, 243), ref failures);
+                Check("244 has claimed", lootGuard.HasClaimedLootToday(characterId, 244), ref failures);
+                Check("245 not claimed", !lootGuard.HasClaimedLootToday(characterId, 245), ref failures);
+
+                // 非 Anton_Awakening 副本
+                Check("999 not claimed", !lootGuard.HasClaimedLootToday(characterId, 999), ref failures);
+                Check("999 mark returns false",
+                    !lootGuard.TryMarkLootClaimed(characterId, 999), ref failures);
             }
             finally
             {
@@ -153,46 +156,6 @@ WHERE dungeon_id IN (243, 244, 245, 246, 247)
                 Check("post: 243 cleared", !post.Contains((ushort)243), ref failures);
                 Check("post: 247 cleared", !post.Contains((ushort)247), ref failures);
                 Check("post: only 2 permissions remain", post.Count == 2, ref failures);
-            }
-            finally
-            {
-                TryDelete(tempDbPath);
-                TryDelete(tempDbPath + "-wal");
-                TryDelete(tempDbPath + "-shm");
-            }
-        }
-
-        private static void VerifyLimitConsumeAfterClear(ref int failures)
-        {
-            var tempDbPath = Path.Combine(
-                Path.GetTempPath(),
-                $"dfo_anton_awakening_limit_{Guid.NewGuid():N}.db");
-            try
-            {
-                var database = new GameDatabase(tempDbPath, ServerPaths.SchemaFilePath);
-                var entryLimits = new DungeonEntryLimitService(database);
-                const int accountId = 57120;
-                const int characterId = 57121;
-                SeedAccount(database, accountId, "anton-awakening-limit-a");
-                SeedCharacter(database, characterId, accountId, "anton-awakening-limit-c");
-
-                // 验证前置：243 limit_count=1
-                var preSnapshot = entryLimits.LoadSpecialDungeonLimits(accountId, characterId)
-                    .FirstOrDefault(s => s.DungeonId == 243);
-                Check("pre: limit config exists for 243", preSnapshot != null, ref failures);
-                if (preSnapshot != null)
-                {
-                    Check("pre: limit count == 1", preSnapshot.LimitCount == 1, ref failures);
-                    Check("pre: current count == 1", preSnapshot.CurrentCount == 1, ref failures);
-                }
-
-                // 模拟通关 247：扣减 243
-                entryLimits.TryConsumeSpecialDungeonLimit(accountId, characterId, 243, 1, out var consumeResult);
-                Check("243 limit consumed", consumeResult.IsLimited, ref failures);
-
-                // 再尝试消费：应被拒绝
-                entryLimits.TryCheckSpecialDungeonLimit(accountId, characterId, 243, 1, out var checkResult);
-                Check("243 limit exhausted", !checkResult.Allowed, ref failures);
             }
             finally
             {
