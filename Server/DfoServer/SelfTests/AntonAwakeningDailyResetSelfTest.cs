@@ -14,9 +14,16 @@ namespace DfoServer.SelfTests
     /// Anton_Awakening 每日重置行为测试：
     /// 1) 通关黑色火山 (247) 后 243-247 全部被锁住（DELETE + limit 扣减）
     /// 2) 跨天 06:00 重置只清空 Anton_Awakening 行，不影响其他副本
+    /// 3) 247 每日首次通关触发 4 张特殊翻牌（squad_item + pcroom_card 池）
     /// </summary>
     public static class AntonAwakeningDailyResetSelfTest
     {
+        // 抽卡池（灭杀安徒恩段 squad_item 5 个 + pcroom_card 1 个）
+        private static readonly HashSet<uint> CardPoolItemIds = new HashSet<uint>
+        {
+            10157782, 10157783, 10157784, 10157785, 10157786, 10094733,
+        };
+
         public static int Run()
         {
             Console.WriteLine("=== ANTON_AWAKENING_DAILY_RESET selftest ===");
@@ -24,6 +31,9 @@ namespace DfoServer.SelfTests
             VerifyClearWritesLootCounter(ref failures);
             VerifyCrossDayResetClearsOnlyAntonAwakening(ref failures);
             VerifyClearLeavesOtherDungeonsIntact(ref failures);
+            VerifySpecialCardDrawnOnce(ref failures);
+            VerifyDrawCardDistribution(ref failures);
+            VerifyCrossDayResetsCardCounter(ref failures);
             Console.WriteLine(
                 failures == 0
                     ? "ANTON_AWAKENING_DAILY_RESET selftest passed."
@@ -198,6 +208,152 @@ WHERE dungeon_id IN (243, 244, 245, 246, 247)
                 Check("post: 225 (Anton_Normal) retained", post.Contains((ushort)225), ref failures);
                 Check("post: 234 (Anton_Quest) retained", post.Contains((ushort)234), ref failures);
                 Check("post: 247 cleared", !post.Contains((ushort)247), ref failures);
+            }
+            finally
+            {
+                TryDelete(tempDbPath);
+                TryDelete(tempDbPath + "-wal");
+                TryDelete(tempDbPath + "-shm");
+            }
+        }
+
+        private static void VerifySpecialCardDrawnOnce(ref int failures)
+        {
+            var tempDbPath = Path.Combine(
+                Path.GetTempPath(),
+                $"dfo_anton_awakening_card_once_{Guid.NewGuid():N}.db");
+            try
+            {
+                var database = new GameDatabase(tempDbPath, ServerPaths.SchemaFilePath);
+                var dailyReset = new DailyResetService(database);
+                var cardService = new AntonAwakeningDailyCardService(
+                    database.ConnectionString,
+                    dailyReset);
+                const int accountId = 57200;
+                const int characterId = 57201;
+                SeedAccount(database, accountId, "anton-awakening-card-a");
+                SeedCharacter(database, characterId, accountId, "anton-awakening-card-c");
+
+                Check("not claimed before first clear",
+                    !cardService.HasClaimedCardToday(characterId), ref failures);
+
+                var firstMark = cardService.TryMarkCardClaimed(characterId);
+                Check("first card mark succeeded", firstMark, ref failures);
+                Check("claimed after first clear",
+                    cardService.HasClaimedCardToday(characterId), ref failures);
+
+                // 第二次通关 247：应返回 false（已标记，不会再次触发翻牌）
+                var secondMark = cardService.TryMarkCardClaimed(characterId);
+                Check("second card mark returns false (already claimed)",
+                    !secondMark, ref failures);
+            }
+            finally
+            {
+                TryDelete(tempDbPath);
+                TryDelete(tempDbPath + "-wal");
+                TryDelete(tempDbPath + "-shm");
+            }
+        }
+
+        private static void VerifyDrawCardDistribution(ref int failures)
+        {
+            var tempDbPath = Path.Combine(
+                Path.GetTempPath(),
+                $"dfo_anton_awakening_card_pool_{Guid.NewGuid():N}.db");
+            try
+            {
+                var database = new GameDatabase(tempDbPath, ServerPaths.SchemaFilePath);
+                var dailyReset = new DailyResetService(database);
+                var cardService = new AntonAwakeningDailyCardService(
+                    database.ConnectionString,
+                    dailyReset);
+                const int accountId = 57300;
+                const int characterId = 57301;
+                SeedAccount(database, accountId, "anton-awakening-pool-a");
+                SeedCharacter(database, characterId, accountId, "anton-awakening-pool-c");
+
+                // 抽 30 轮，每轮 4 张，验证分布范围（池只有 6 个候选 itemId）
+                var distinctItems = new HashSet<uint>();
+                for (var round = 0; round < 30; round++)
+                {
+                    var cards = cardService.DrawCardRewards();
+                    Check(
+                        $"round {round}: 4 cards drawn",
+                        cards.Count == 4,
+                        ref failures);
+                    foreach (var itemId in cards)
+                    {
+                        distinctItems.Add(itemId);
+                        Check(
+                            $"round {round}: item {itemId} in pool",
+                            CardPoolItemIds.Contains(itemId),
+                            ref failures);
+                    }
+                }
+
+                // 1000 轮内，应能命中池里所有 itemId（卡池只有 6 项，权重最高的
+                // 10157782 也只占 77%，低权重项目仍有机会命中）
+                var bigDraw = new HashSet<uint>();
+                for (var round = 0; round < 1000; round++)
+                {
+                    foreach (var itemId in cardService.DrawCardRewards())
+                        bigDraw.Add(itemId);
+                }
+                Check("big draw covered all pool items", bigDraw.SetEquals(CardPoolItemIds), ref failures);
+            }
+            finally
+            {
+                TryDelete(tempDbPath);
+                TryDelete(tempDbPath + "-wal");
+                TryDelete(tempDbPath + "-shm");
+            }
+        }
+
+        private static void VerifyCrossDayResetsCardCounter(ref int failures)
+        {
+            var tempDbPath = Path.Combine(
+                Path.GetTempPath(),
+                $"dfo_anton_awakening_card_cross_{Guid.NewGuid():N}.db");
+            try
+            {
+                var database = new GameDatabase(tempDbPath, ServerPaths.SchemaFilePath);
+                var dailyReset = new DailyResetService(database);
+                var cardService = new AntonAwakeningDailyCardService(
+                    database.ConnectionString,
+                    dailyReset);
+                const int accountId = 57400;
+                const int characterId = 57401;
+                SeedAccount(database, accountId, "anton-awakening-card-cross-a");
+                SeedCharacter(database, characterId, accountId, "anton-awakening-card-cross-c");
+
+                // 当天通关 247
+                var firstMark = cardService.TryMarkCardClaimed(characterId);
+                Check("cross: first mark succeeded", firstMark, ref failures);
+                Check("cross: claimed today",
+                    cardService.HasClaimedCardToday(characterId), ref failures);
+
+                // 模拟跨天：把 character_daily_reset 的 day_id 改为 0，
+                // 下一次 EnsureRowAndRollover 会清空当日所有 counter
+                using (var conn = new SqliteConnection(database.ConnectionString))
+                {
+                    conn.Open();
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+UPDATE character_daily_reset SET day_id = 0 WHERE character_id = @cid;";
+                        cmd.Parameters.AddWithValue("@cid", characterId);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+
+                // 跨天后：应未领取，可再次通关
+                Check("cross: after rollover, not claimed",
+                    !cardService.HasClaimedCardToday(characterId), ref failures);
+                var secondDayMark = cardService.TryMarkCardClaimed(characterId);
+                Check("cross: second-day mark succeeded",
+                    secondDayMark, ref failures);
+                Check("cross: claimed second day",
+                    cardService.HasClaimedCardToday(characterId), ref failures);
             }
             finally
             {

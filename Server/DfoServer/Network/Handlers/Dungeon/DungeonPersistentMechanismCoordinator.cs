@@ -13,11 +13,13 @@ namespace DfoServer.Network.Handlers.Dungeon
 
         internal DungeonPersistentMechanismCoordinator(
             SqliteCharacterStateRepository characterStateRepository,
-            AntonAwakeningDailyLootGuard lootGuard = null)
+            AntonAwakeningDailyLootGuard lootGuard = null,
+            AntonAwakeningDailyCardService cardService = null)
         {
             _antonNormal = new AntonNormalConquestNotifier(
                 characterStateRepository,
-                lootGuard);
+                lootGuard,
+                cardService);
         }
 
         internal Task RestoreBeforeSelectionAsync(

@@ -17,11 +17,13 @@ namespace DfoServer.Network.Handlers.Dungeon
 
         internal AntonNormalConquestNotifier(
             SqliteCharacterStateRepository repository,
-            AntonAwakeningDailyLootGuard lootGuard = null)
+            AntonAwakeningDailyLootGuard lootGuard = null,
+            AntonAwakeningDailyCardService cardService = null)
         {
             _application = new AntonNormalConquestApplicationService(
                 repository,
-                lootGuard);
+                lootGuard,
+                cardService);
             _sender = new AntonNormalConquestNotificationSender();
         }
 
