@@ -69,6 +69,7 @@ namespace DfoServer.Network.Handlers.Dungeon
         internal Game.Dungeon.BloodAltar.BloodAltarRewardPlanningService
             BloodAltarRewardPlanner { get; }
         internal Game.Dungeon.LicensedDungeonService LicensedDungeons { get; }
+        internal Game.Dungeon.AntonAwakeningDailyLootGuard AntonLootGuard { get; }
 
         internal DungeonSharedServices(
             Game.ReviveCoin.ReviveCoinService reviveCoin,
@@ -184,12 +185,13 @@ namespace DfoServer.Network.Handlers.Dungeon
                 new Game.Dungeon.BloodAltar
                     .BloodAltarRewardPlanningService();
             LicensedDungeons = new Game.Dungeon.LicensedDungeonService(Database);
+            AntonLootGuard = new Game.Dungeon.AntonAwakeningDailyLootGuard(
+                ConnectionString,
+                new Game.DailyReset.DailyResetService(Database));
 
             PersistentMechanisms = new DungeonPersistentMechanismCoordinator(
                 CharacterStateRepository,
-                new Game.Dungeon.AntonAwakeningDailyLootGuard(
-                    ConnectionString,
-                    new Game.DailyReset.DailyResetService(Database)));
+                AntonLootGuard);
             DeathTower = new DeathTowerCoordinator(
                 ConnectionString,
                 sendExpGrantNotification: (session, settlement) =>
