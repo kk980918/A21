@@ -25,13 +25,7 @@ namespace DfoServer.Game.Dungeon
         private const int LinkedChallengeRate = 100;
         private const int LinkedChallengeCondition = -1;
         private readonly SqliteCharacterStateRepository _repository;
-        private readonly DungeonEntryLimitService _entryLimits;
-        private readonly IGameDatabase _database;
-
-        // Anton_Awakening 最后一个副本（黑色火山），通关后锁住 5 个副本
-        private const int AntonAwakeningFinalDungeonId = 247;
-        private static readonly int[] AntonAwakeningDungeonIds =
-            { 243, 244, 245, 246, 247 };
+        private readonly AntonAwakeningDailyLootGuard _lootGuard;
 
         internal AntonNormalConquestApplicationService(
             SqliteCharacterStateRepository repository)
@@ -41,14 +35,11 @@ namespace DfoServer.Game.Dungeon
 
         internal AntonNormalConquestApplicationService(
             SqliteCharacterStateRepository repository,
-            IGameDatabase database)
+            AntonAwakeningDailyLootGuard lootGuard)
         {
             _repository = repository
                 ?? throw new ArgumentNullException(nameof(repository));
-            _database = database;
-            _entryLimits = database != null
-                ? new DungeonEntryLimitService(database)
-                : null;
+            _lootGuard = lootGuard;
         }
 
         internal void ConfigureLinkedChallenge(DungeonRun run)
@@ -127,12 +118,21 @@ namespace DfoServer.Game.Dungeon
                 return false;
             }
 
-            // 通关 Anton_Awakening 最后一个副本（黑色火山）后：
-            //   1) 清空 character 243-247 权限行（让客户端 UI 不再显示通关状态）
-            //   2) 扣减 243-247 全部 5 个 limit（让 dungeon_limit_records 今日耗尽）
-            if (dungeonId == AntonAwakeningFinalDungeonId)
+            // Anton_Awakening 副本通关后立即标记"今日已领怪物掉落"
+            // 下次怪物死亡时 DropService 会跳过 GenerateAndRegister
+            if (_lootGuard != null
+                && AntonAwakeningDailyLootGuard.IsAntonAwakeningDungeon(dungeonId))
             {
-                TryLockAntonAwakening(characterId, accountId);
+                try
+                {
+                    _lootGuard.TryMarkLootClaimed(characterId, dungeonId);
+                }
+                catch (Exception ex)
+                {
+                    FileLogger.Log(
+                        $"[AntonAwakening] mark loot claimed failed "
+                        + $"character={characterId} dungeon={dungeonId}: {ex.Message}");
+                }
             }
 
             result = new AntonNormalClearApplicationResult(state, changes);
@@ -184,49 +184,6 @@ namespace DfoServer.Game.Dungeon
                 DungeonId = (ushort)dungeonId,
                 ClearState = (byte)Math.Max(1, unlockedState - 1),
             });
-        }
-
-        private void TryLockAntonAwakening(int characterId, int accountId)
-        {
-            if (_repository == null)
-                return;
-
-            try
-            {
-                // 清空 243-247 权限行
-                _repository.DeleteDungeonPermissions(
-                    characterId,
-                    AntonAwakeningDungeonIds);
-            }
-            catch (Exception ex)
-            {
-                FileLogger.Log(
-                    $"[AntonAwakening] clear permissions failed " +
-                    $"character={characterId} dungeon={AntonAwakeningFinalDungeonId}: {ex.Message}");
-            }
-
-            // 扣减 243-247 全部 5 个 limit
-            if (_entryLimits == null || accountId <= 0)
-                return;
-
-            foreach (var dungeonId in AntonAwakeningDungeonIds)
-            {
-                try
-                {
-                    _entryLimits.TryConsumeSpecialDungeonLimit(
-                        accountId,
-                        characterId,
-                        dungeonId,
-                        consumeCount: 1,
-                        out _);
-                }
-                catch (Exception ex)
-                {
-                    FileLogger.Log(
-                        $"[AntonAwakening] consume limit failed " +
-                        $"character={characterId} dungeon={dungeonId}: {ex.Message}");
-                }
-            }
         }
     }
 }

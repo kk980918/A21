@@ -186,7 +186,10 @@ namespace DfoServer.Network.Handlers.Dungeon
             LicensedDungeons = new Game.Dungeon.LicensedDungeonService(Database);
 
             PersistentMechanisms = new DungeonPersistentMechanismCoordinator(
-                CharacterStateRepository);
+                CharacterStateRepository,
+                new Game.Dungeon.AntonAwakeningDailyLootGuard(
+                    ConnectionString,
+                    new Game.DailyReset.DailyResetService(Database)));
             DeathTower = new DeathTowerCoordinator(
                 ConnectionString,
                 sendExpGrantNotification: (session, settlement) =>
