@@ -51,6 +51,8 @@ namespace DfoServer.Game.Dungeon
         internal ClearRewardGenerator.CardReward FreeGold;
         internal ClearRewardGenerator.CardReward FreeItem;
         internal BlackDiamondCardReward BlackDiamondCardReward;
+        internal ClearRewardGenerator.CardReward PaidGold;
+        internal ClearRewardGenerator.CardReward PaidItem;
         internal IReadOnlyList<ClearRewardGenerator.CardReward>
             TowerRewardCandidates = Array.Empty<ClearRewardGenerator.CardReward>();
         internal IReadOnlyList<TowerOfDespairGrantedReward>

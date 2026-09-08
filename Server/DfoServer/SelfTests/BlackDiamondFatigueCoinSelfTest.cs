@@ -876,6 +876,8 @@ LIMIT 1;";
                     && MailboxAlarmCount(retryPackets) == 1,
                     ref failures);
 
+                run.RoomStates[run.RoomKey].InstanceRoom.MarkLoadingReady(
+                    run.CaptureIdentity(), new[] { run.CaptureIdentity() });
                 var revisitIdentity = handler.SendStartMapAsync(
                         session,
                         run,
@@ -898,6 +900,8 @@ LIMIT 1;";
                     && CountNoti(revisitPackets, (ushort)NotiPacketTypeA21.START_MAP) == 1,
                     ref failures);
 
+                run.RoomStates[run.RoomKey].InstanceRoom.MarkLoadingReady(
+                    run.CaptureIdentity(), new[] { run.CaptureIdentity() });
                 var secondIdentity = handler.SendStartMapAsync(
                         session,
                         run,
@@ -1009,7 +1013,7 @@ LIMIT 1;";
 
                 // Pause the real handler at its await, then invalidate its owner.
                 // No sleep, mock handler or timing-dependent thread race is needed.
-                for (var invalidation = 0; invalidation < 3; invalidation++)
+                for (var invalidation = 0; invalidation < 4; invalidation++)
                 {
                     SeedUsed(connectionString, MemberCharacterA, 149);
                     SeedUsed(connectionString, MemberCharacterB, 149);
@@ -1026,8 +1030,11 @@ LIMIT 1;";
                             session.Player.CurrentRun = null;
                         else if (invalidation == 1)
                             AttachMazeRun(session, MemberCharacterB, MemberAccount, dungeonId);
-                        else
+                        else if (invalidation == 2)
                             staleRun.RoomKey = new RoomKey(nextX, nextY, 0);
+                        else
+                            Check("new loading projection supersedes pending fatigue request",
+                                staleRun.TryClaimLoadingProjection(long.MaxValue), ref failures);
                     }
                     finally
                     {

@@ -766,7 +766,8 @@ namespace DfoServer.SelfTests
                         "\"itemId\":0,\"stackCount\":0}",
                     ref failures);
 
-                var info = CardRewardNotificationSender.BuildCardInfoAck(memberRun);
+                var info = CardRewardNotificationSender.BuildCardInfoAck(
+                    CardRewardCoordinator.BuildPartyProjection(memberRun, null));
                 Check(
                     "0x0047 paid list does not carry the kind2 coin",
                     info != null
@@ -833,7 +834,7 @@ namespace DfoServer.SelfTests
                 var coordinator = new CardRewardCoordinator(
                     application,
                     sender,
-                    database);
+                    database: database);
 
                 RunCoordinatorCase(
                     "timer auto-flips free and grants extra once",
@@ -1062,7 +1063,8 @@ namespace DfoServer.SelfTests
                                 accountId,
                                 paidItemId)
                             : 0;
-                        var info = CardRewardNotificationSender.BuildCardInfoAck(run);
+                        var info = CardRewardNotificationSender.BuildCardInfoAck(
+                            CardRewardCoordinator.BuildPartyProjection(run, null));
                         Check(
                             name,
                             acted
