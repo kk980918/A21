@@ -46,9 +46,11 @@ namespace DfoServer.Game.Dungeon
             DungeonRun run,
             CardRewardSide side,
             out List<ClearRewardGenerator.CardReward> cards,
+            out BlackDiamondCardReward extra,
             out DungeonEffectReservation reservation)
         {
             cards = null;
+            extra = default;
             reservation = default;
             if (run == null)
                 return false;
@@ -61,6 +63,8 @@ namespace DfoServer.Game.Dungeon
                 {
                     return false;
                 }
+                if (side == CardRewardSide.Free)
+                    extra = run.BlackDiamondCardReward;
             }
             return run.Effects.TryReserve(GetEffectId(run, side), out reservation);
         }
