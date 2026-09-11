@@ -227,6 +227,9 @@ namespace DfoServer.Game.Inventory
                 return false;
             }
 
+            // 货架上的租赁装备自带强化等级(租赁目录 [section]), 创建后补写, 否则背包里没有该强化词条。
+            ApplyRentalWeaponFields(inventory, grant.ListType, grant.SlotIndex, expireTime);
+
             var walletSp = 0;
             var walletCera = 0;
             if (TryLoadCurrentWallet(inventory, sharedConnection, sharedTransaction, out var wallet))
@@ -614,6 +617,26 @@ namespace DfoServer.Game.Inventory
             };
         }
 
+        private static void ApplyRentalWeaponFields(
+            InventoryService inventory,
+            InventoryListType listType,
+            short slotIndex,
+            int expireTime)
+        {
+            var core = inventory.GetItem(listType, slotIndex);
+            if (core == null)
+                return;
+
+            var updated = core.Copy();
+            ApplyRentalWeaponRenewalFields(updated, expireTime);
+            if (!inventory.SetItem(listType, slotIndex, updated))
+            {
+                FileLogger.Log(
+                    $"[Rental] apply rental fields failed list={listType} "
+                    + $"slot={slotIndex} item=0x{updated.ItemId:X8}");
+            }
+        }
+
         private static void ApplyRentalWeaponRenewalFields(ItemCore core, int expireTime)
         {
             if (core == null)
@@ -621,6 +644,13 @@ namespace DfoServer.Game.Inventory
 
             core.ExpireTime = expireTime;
             core.Marker16 = ItemCore.Marker16Default;
+
+            // 租赁目录 [section] 逐档定义了货架装备的强化等级(A21 实测为 +7);
+            // 授予/续租都必须写回 ItemCore.Upgrade, 否则背包里的装备没有货架显示的强化词条。
+            var upgradeLevel = RentalWeaponInventoryMapper.GetRentalUpgradeLevel(core.ItemId);
+            if (upgradeLevel > 0)
+                core.Upgrade = upgradeLevel;
+
             var metadata = ItemMetadataResolver.Resolve(core.ItemId);
             if (metadata != null && metadata.Durability > 0)
                 core.Durability = metadata.Durability;
