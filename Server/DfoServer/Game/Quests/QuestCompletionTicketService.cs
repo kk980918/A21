@@ -798,12 +798,30 @@ WHERE character_id = @cid AND delete_flag = 0;";
             switch (actionKind)
             {
                 case QuestCompletionTicketActionKind.FirstAwakenClear:
-                    return quest.JobChangeQuestValue == 2;
+                    return quest.JobChangeQuestValue == 2
+                        || IsFirstAwakeningRewardQuest(quest);
                 case QuestCompletionTicketActionKind.SecondAwakenClear:
                     return quest.JobChangeQuestValue == 3;
                 default:
                     return false;
             }
+        }
+
+        // Dark Knight / Creator self-awakening quests carry no
+        // [job change quest] tag: the awakening is applied purely through
+        // the [awakening type] reward field (e.g. quest 2680).
+        internal static bool IsFirstAwakeningRewardQuest(QuestFile quest)
+        {
+            if (!string.Equals(
+                    QuestData.NormalizeQuestTag(quest.RewardType),
+                    "awakening type",
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var parameters = QuestData.ParseIntList(quest.RewardIntData);
+            return parameters.Count == 1 && parameters[0] == 1;
         }
 
         private static bool IsCompletableAchievementQuest(

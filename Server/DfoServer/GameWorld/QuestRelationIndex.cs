@@ -208,9 +208,14 @@ namespace DfoServer.GameWorld
             if (jobChangeQuest == 2)
             {
                 // First awakening is available only after transfer and before
-                // the first awakening high nibble is recorded.
-                if (firstGrow <= 0 || secondGrow != 0)
+                // the first awakening high nibble is recorded. Subclassless
+                // jobs (Dark Knight / Creator) never pick a first grow, so
+                // they self-awaken with firstGrow == 0.
+                if ((firstGrow <= 0 && !IsSubclasslessJob(characterJob))
+                    || secondGrow != 0)
+                {
                     return false;
+                }
                 if (quest.GrowType != -1 && quest.GrowType != firstGrow)
                     return false;
             }
@@ -218,9 +223,13 @@ namespace DfoServer.GameWorld
             {
                 // Second awakening is available only after first awakening and
                 // must disappear as soon as the second high-nibble stage is
-                // persisted.
-                if (firstGrow <= 0 || secondGrow != 1)
+                // persisted. Subclassless jobs reach this stage with
+                // firstGrow == 0.
+                if ((firstGrow <= 0 && !IsSubclasslessJob(characterJob))
+                    || secondGrow != 1)
+                {
                     return false;
+                }
                 if (quest.GrowType != -1 && quest.GrowType != firstGrow)
                     return false;
             }
@@ -236,6 +245,13 @@ namespace DfoServer.GameWorld
 
             return true;
         }
+
+        // Dark Knight (job 9) and Creator (job 10) are extension jobs without
+        // a subclass transfer: the first grow nibble stays 0 forever and
+        // self-awakening advances only the second nibble (see
+        // CharacterJobTags indices 9/10).
+        private static bool IsSubclasslessJob(int characterJob)
+            => characterJob == 9 || characterJob == 10;
 
         internal static bool IsQuestClearQuest(int questId)
             => IsQuestClearQuest(QuestCatalog.Get(questId));
@@ -441,6 +457,7 @@ namespace DfoServer.GameWorld
                 || grade == "[normaly repeat]"
                 || grade == "[special daily]"
                 || grade == "[common unique]"
+                || grade == "[realization]"
                 || grade == "[system]";
 
         private static int ParseExposedValue(string value)
