@@ -45,6 +45,7 @@ namespace DfoServer.Network.Parsers.Dungeon
     internal static class DeathTowerInventoryCommandParser
     {
         internal static bool TryParseUseStackable(
+            ushort packetType,
             byte[] body,
             out DeathTowerUseStackableCommand command)
         {
@@ -56,7 +57,9 @@ namespace DfoServer.Network.Parsers.Dungeon
                 BitConverter.ToInt16(body, 0),
                 (InventoryListType)body[2],
                 BitConverter.ToInt32(body, 3),
-                body.Length >= 11 ? BitConverter.ToInt32(body, 7) : 0);
+                Network.Handlers.InventoryHandler.ResolveUseStackableExpectedItemId(
+                    packetType,
+                    body.Length >= 11 ? BitConverter.ToInt32(body, 7) : 0));
             return true;
         }
 

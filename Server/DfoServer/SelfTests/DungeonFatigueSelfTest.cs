@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using DfoServer.Game.DailyReset;
 using DfoServer.Game.Dungeon;
+using DfoServer.Game.Inventory;
 using DfoServer.Infrastructure;
 using DfoServer.Network.Builders;
 using DfoServer.Network.Parsers.Dungeon;
@@ -22,6 +23,7 @@ namespace DfoServer.SelfTests
             VerifyLegacyConsumedValueMigration(ref failures);
             VerifyCharacterRepositoryMapping(ref failures);
             VerifyPersistenceBlackDiamondAndRollover(ref failures);
+            VerifyFatigueRecoveryConsumable(ref failures);
             VerifyFatigueNotificationBody(ref failures);
             VerifySelectCharacterFatigueProjection(ref failures);
             VerifyDungeonFatiguePolicy(ref failures);
@@ -32,6 +34,156 @@ namespace DfoServer.SelfTests
                     ? "DUNGEON_FATIGUE selftest passed."
                     : $"DUNGEON_FATIGUE selftest failed: {failures}");
             return failures == 0 ? 0 : 1;
+        }
+
+        private static void VerifyFatigueRecoveryConsumable(ref int failures)
+        {
+            var databasePath = TempDbPath("recovery-item");
+            var sessionId = Guid.NewGuid();
+            try
+            {
+                var database = new GameDatabase(
+                    databasePath,
+                    ServerPaths.SchemaFilePath);
+                using (var connection = database.OpenConnection())
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = @"
+INSERT INTO accounts(account_id, m_id, password_hash)
+VALUES(9671, 'fatigue-recovery-account', '');
+INSERT INTO characters(
+    character_id, account_id, name, job,
+    fatigue, usedFatigue, maxFatigue, fatigue_reset_day
+) VALUES (
+    9672, 9671, 'fatigue-recovery-character', 0,
+    155, 0, 156, @day
+);";
+                    command.Parameters.AddWithValue(
+                        "@day",
+                        DailyResetService.TodayId());
+                    command.ExecuteNonQuery();
+                }
+
+                var service = new DungeonFatigueService(database);
+                InventoryService inventory;
+                using (var connection = database.OpenConnection())
+                {
+                    inventory = InventoryService.LoadFromDb(
+                        connection,
+                        9672,
+                        9671,
+                        database);
+                }
+                inventory.SetItem(
+                    InventoryListType.Main,
+                    116,
+                    new ItemCore
+                    {
+                        ItemKind = ItemCore.KindConsumable,
+                        ItemId = 2749834,
+                        Count = 5,
+                    });
+                var lease = InventoryContext.Register(
+                    sessionId,
+                    9672,
+                    inventory);
+                if (!OnlineInventoryMutationCommitCoordinator.TryCommit(
+                        lease,
+                        "selftest-seed-fatigue-recovery-item"))
+                {
+                    throw new InvalidOperationException(
+                        "failed to persist fatigue recovery item fixture");
+                }
+
+                InventoryStackableUseCommitResult UsePotion()
+                    => InventoryDeleteCommitService.TryCommitStackableUseDetailed(
+                        lease,
+                        InventoryListType.Main,
+                        116,
+                        expectedItemId: 0,
+                        (connection, transaction, resolvedItemId) =>
+                            DungeonFatigueService.TryResolveRecoveryAmount(
+                                resolvedItemId,
+                                out var recoveryAmount)
+                            && service.TryRestoreInTransaction(
+                                connection,
+                                transaction,
+                                9672,
+                                recoveryAmount,
+                                out _));
+
+                void ClearPotionCooltime()
+                {
+                    lock (lease.SyncRoot)
+                        lease.Inventory.ItemStates.Remove(
+                            ItemStateKinds.Cooltime,
+                            2749834);
+                    if (!OnlineInventoryMutationCommitCoordinator.TryCommit(
+                            lease,
+                            "selftest-clear-fatigue-potion-cooltime"))
+                    {
+                        throw new InvalidOperationException(
+                            "failed to clear fatigue potion cooltime fixture");
+                    }
+                }
+
+                var first = UsePotion();
+                Check(
+                    "A21 action source and fatigue action are fail-closed",
+                    Network.Handlers.InventoryHandler.ResolveUseStackableExpectedItemId(
+                        (ushort)Network.CmdPacketTypeA21.USE_STACKABLE_ACTION,
+                        58) == 0
+                    && !Network.Handlers.InventoryHandler.AllowsGenericStackableUse(
+                        (ushort)Network.CmdPacketTypeA21.USE_STACKABLE_ACTION,
+                        hasImplementedAction: false)
+                    && Network.Handlers.InventoryHandler.AllowsGenericStackableUse(
+                        (ushort)Network.CmdPacketTypeA21.USE_STACKABLE_ACTION,
+                        hasImplementedAction: true)
+                    && Network.Handlers.InventoryHandler.AllowsGenericStackableUse(
+                        0x002C,
+                        hasImplementedAction: false),
+                    ref failures);
+
+                Check(
+                    "fatigue potion consumes, restores and records daily count atomically",
+                    first?.Consumed == true
+                    && first.ItemTemplateId == 2749834
+                    && lease.Inventory.GetItem(InventoryListType.Main, 116)?.Count == 4
+                    && ReadFatigue(database, 9672).Remaining == 156
+                    && ReadUsableCount(database, 9672, 2749834) == 1,
+                    ref failures);
+
+                ClearPotionCooltime();
+                var full = UsePotion();
+                Check(
+                    "full fatigue rolls back item and daily count",
+                    full == null
+                    && lease.Inventory.GetItem(InventoryListType.Main, 116)?.Count == 4
+                    && ReadFatigue(database, 9672).Remaining == 156
+                    && ReadUsableCount(database, 9672, 2749834) == 1,
+                    ref failures);
+
+                SetRemaining(database, 9672, 153);
+                var second = UsePotion();
+                ClearPotionCooltime();
+                var third = UsePotion();
+                ClearPotionCooltime();
+                var limited = UsePotion();
+                Check(
+                    "fatigue potion obeys PVF daily limit without partial mutation",
+                    second?.Consumed == true
+                    && third?.Consumed == true
+                    && limited == null
+                    && lease.Inventory.GetItem(InventoryListType.Main, 116)?.Count == 2
+                    && ReadFatigue(database, 9672).Remaining == 155
+                    && ReadUsableCount(database, 9672, 2749834) == 3,
+                    ref failures);
+            }
+            finally
+            {
+                InventoryContext.Unregister(sessionId, 9672);
+                TryDelete(databasePath);
+            }
         }
 
         private static void VerifyFatigueNotificationBody(ref int failures)
@@ -510,6 +662,24 @@ WHERE character_id=@cid;";
         {
             using (var connection = database.OpenConnection())
                 return ReadFatigue(connection, characterId);
+        }
+
+        private static int ReadUsableCount(
+            GameDatabase database,
+            int characterId,
+            int itemTemplateId)
+        {
+            using (var connection = database.OpenConnection())
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = @"
+SELECT used_count
+FROM character_usable_count_limits
+WHERE character_id=@cid AND item_id=@itemId;";
+                command.Parameters.AddWithValue("@cid", characterId);
+                command.Parameters.AddWithValue("@itemId", itemTemplateId);
+                return Convert.ToInt32(command.ExecuteScalar() ?? 0);
+            }
         }
 
         private static void SetRemaining(

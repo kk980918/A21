@@ -35,7 +35,9 @@ namespace DfoServer.Network.Handlers
             var slotIndex = BitConverter.ToInt16(body, 0);
             var listType = (InventoryListType)body[2];
             var instanceValue = BitConverter.ToInt32(body, 3);
-            var itemCode = body.Length >= 11 ? BitConverter.ToInt32(body, 7) : 0;
+            var itemCode = ResolveUseStackableExpectedItemId(
+                header.type,
+                body.Length >= 11 ? BitConverter.ToInt32(body, 7) : 0);
             var (characterId, _) = ResolveOwner(session);
 
             InventoryLease lease = null;
@@ -132,9 +134,25 @@ namespace DfoServer.Network.Handlers
             var slotIndex = BitConverter.ToInt16(body, 0);
             var listType = (InventoryListType)body[2];
             var instanceValue = BitConverter.ToInt32(body, 3);
-            var itemCode = body.Length >= 11 ? BitConverter.ToInt32(body, 7) : 0;
+            var itemCode = ResolveUseStackableExpectedItemId(
+                header.type,
+                body.Length >= 11 ? BitConverter.ToInt32(body, 7) : 0);
 
             var (cid, aid) = ResolveOwner(session);
+            InventoryLease lease = null;
+            if (itemCode <= 0
+                && TryGetOwnedInventoryLease(session, cid, out lease))
+            {
+                lock (lease.SyncRoot)
+                {
+                    InventoryDeleteService.CanUseStackableForClient(
+                        lease.Inventory,
+                        listType,
+                        slotIndex,
+                        expectedItemId: 0,
+                        out itemCode);
+                }
+            }
 
             if (await TryRejectExpiredStackableSourceAsync(
                     session,
@@ -188,7 +206,6 @@ namespace DfoServer.Network.Handlers
 
             AccountCargoUpgradeToolResult accountCargoToolResult = null;
             bool accountCargoToolHandled = false;
-            InventoryLease lease = null;
             if (TryGetOwnedInventoryLease(session, cid, out lease))
             {
                 lock (lease.SyncRoot)
@@ -290,13 +307,52 @@ namespace DfoServer.Network.Handlers
 
             InventoryMutationResult result = null;
             InventoryStackableUseCommitResult stackableUseResult = null;
+            DungeonFatigueSnapshot? restoredFatigue = null;
+            var hasFatigueRecovery = DungeonFatigueService.TryResolveRecoveryAmount(
+                itemCode,
+                out var recoveryAmount);
+            if (!AllowsGenericStackableUse(header.type, hasFatigueRecovery))
+            {
+                await session.SendPacketAsync(GamePacketEnvelopeBuilder.Build(
+                    0x01,
+                    header.type,
+                    UseStackableAckBuilder.BuildError(
+                        (byte)listType,
+                        instanceValue,
+                        itemCode)));
+                FileLogger.Log(
+                    $"[{ProtocolName}] USE_STACKABLE action rejected: " +
+                    $"unsupported item=0x{itemCode:X8} listType={listType} " +
+                    $"slot={slotIndex}");
+                return;
+            }
+
             if (TryGetOwnedInventoryLease(session, cid, out lease))
             {
+                var fatigue = new DungeonFatigueService(_database);
                 stackableUseResult = InventoryDeleteCommitService.TryCommitStackableUseDetailed(
                     lease,
                     listType,
                     slotIndex,
-                    itemCode);
+                    itemCode,
+                    (connection, transaction, resolvedItemId) =>
+                    {
+                        if (!hasFatigueRecovery)
+                            return true;
+
+                        if (!fatigue.TryRestoreInTransaction(
+                                connection,
+                                transaction,
+                                cid,
+                                recoveryAmount,
+                                out var snapshot))
+                        {
+                            return false;
+                        }
+
+                        restoredFatigue = snapshot;
+                        return true;
+                    });
                 result = stackableUseResult?.Mutation;
             }
 
@@ -328,6 +384,17 @@ namespace DfoServer.Network.Handlers
             }
             if (result.UsableCountState != null)
                 await SendUsableCountLimitUpdateAsync(session, result.UsableCountState);
+            if (restoredFatigue.HasValue)
+            {
+                var fatigue = restoredFatigue.Value;
+                await session.SendPacketAsync(GamePacketEnvelopeBuilder.Build(
+                    0,
+                    (ushort)NotiPacketTypeA21.FATIGUE,
+                    DungeonNotificationBuilder.BuildFatigue(
+                        fatigue.Remaining,
+                        fatigue.Used,
+                        fatigue.Maximum)));
+            }
             session.GameSession?.QuestManager
                 ?.RecalibrateItemSeekingQuestProgressAfterInventoryMutationWithoutNotification(
                     lease,
@@ -336,8 +403,21 @@ namespace DfoServer.Network.Handlers
             var petSatietyLog = result.PetSatietyChanged
                 ? $" petSatiety key={result.PetCreatureKey} {result.PetSatietyBefore}->{result.PetSatietyAfter}"
                 : string.Empty;
-            FileLogger.Log($"[{ProtocolName}] USE_STACKABLE: consumed 1x item 0x{itemCode:X8} from slot {slotIndex}, remaining={result.RemainingStackCount}{petSatietyLog}");
+            FileLogger.Log($"[{ProtocolName}] USE_STACKABLE: consumed 1x item 0x{stackableUseResult.ItemTemplateId:X8} from slot {slotIndex}, remaining={result.RemainingStackCount}{petSatietyLog}");
         }
+
+        internal static int ResolveUseStackableExpectedItemId(
+            ushort packetType,
+            int packetItemCode)
+            => packetType == (ushort)CmdPacketTypeA21.USE_STACKABLE_ACTION
+                ? 0
+                : packetItemCode;
+
+        internal static bool AllowsGenericStackableUse(
+            ushort packetType,
+            bool hasImplementedAction)
+            => packetType != (ushort)CmdPacketTypeA21.USE_STACKABLE_ACTION
+                || hasImplementedAction;
 
         private async Task<bool> TryRejectExpiredStackableSourceAsync(
             EnhancedClientSession session,

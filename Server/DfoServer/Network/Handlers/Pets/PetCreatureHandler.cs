@@ -37,10 +37,19 @@ namespace DfoServer.Network.Handlers.Pets
                 return false;
 
             var instanceValue = BitConverter.ToInt32(body, 3);
-            var itemCode = body.Length >= 11 ? BitConverter.ToInt32(body, 7) : 0;
+            var itemCode = InventoryHandler.ResolveUseStackableExpectedItemId(
+                header.type,
+                body.Length >= 11 ? BitConverter.ToInt32(body, 7) : 0);
             InventoryMutationResult result = null;
             byte[] creatureStateBody = null;
-            var consumed = TryGetInventoryLease(session, out var lease)
+            var hasLease = TryGetInventoryLease(session, out var lease);
+            if (itemCode <= 0 && hasLease)
+            {
+                lock (lease.SyncRoot)
+                    itemCode = lease.Inventory.GetItem(listType, slotIndex)?.ItemId ?? 0;
+            }
+
+            var consumed = hasLease
                 && PetCreatureRuntimeService.TryCommitDungeonElapsedBeforeMutation(
                     session,
                     lease,

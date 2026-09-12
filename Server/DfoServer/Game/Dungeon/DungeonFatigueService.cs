@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DfoServer.Game.DailyReset;
+using DfoServer.Game.Inventory;
 using DfoServer.Game.Premium;
 using DfoServer.Infrastructure;
 using DfoServer.Network;
@@ -71,6 +72,73 @@ namespace DfoServer.Game.Dungeon
             if (!TryLoad(characterId, out var snapshot))
                 return false;
             allowed = snapshot.Remaining > 0;
+            return true;
+        }
+
+        internal static bool TryResolveRecoveryAmount(
+            int itemTemplateId,
+            out int amount)
+        {
+            amount = 0;
+            var stackable = StackableItemProvider.Load(itemTemplateId);
+            if (!string.Equals(
+                    StackableItemProvider.NormalizeType(stackable?.ActionTypeName),
+                    "[add fatigue]",
+                    StringComparison.OrdinalIgnoreCase)
+                || stackable.ActionTypeParams == null
+                || stackable.ActionTypeParams.Count == 0)
+            {
+                return false;
+            }
+
+            amount = stackable.ActionTypeParams[0];
+            return amount > 0;
+        }
+
+        internal bool TryRestoreInTransaction(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            int characterId,
+            int amount,
+            out DungeonFatigueSnapshot snapshot)
+        {
+            snapshot = default;
+            if (connection == null
+                || transaction == null
+                || characterId <= 0
+                || amount <= 0
+                || !TryLoadAndReconcile(
+                    connection,
+                    transaction,
+                    characterId,
+                    _utcNow(),
+                    out var current)
+                || current.Remaining >= current.Maximum)
+            {
+                return false;
+            }
+
+            var remaining = Math.Min(current.Maximum, current.Remaining + amount);
+            using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = @"
+UPDATE characters
+SET fatigue=@remaining,
+    updated_at=CURRENT_TIMESTAMP
+WHERE character_id=@cid;";
+                command.Parameters.AddWithValue("@remaining", remaining);
+                command.Parameters.AddWithValue("@cid", characterId);
+                if (command.ExecuteNonQuery() != 1)
+                    return false;
+            }
+
+            snapshot = new DungeonFatigueSnapshot(
+                characterId,
+                remaining,
+                current.Used,
+                current.Maximum,
+                current.ResetDay);
             return true;
         }
 

@@ -1,4 +1,5 @@
 using System;
+using Microsoft.Data.Sqlite;
 
 namespace DfoServer.Game.Inventory
 {
@@ -91,7 +92,8 @@ namespace DfoServer.Game.Inventory
             InventoryLease lease,
             InventoryListType listType,
             short slotIndex,
-            int expectedItemId)
+            int expectedItemId,
+            Func<SqliteConnection, SqliteTransaction, int, bool> applyEffect = null)
         {
             if (lease?.Inventory == null)
                 return null;
@@ -142,6 +144,12 @@ namespace DfoServer.Game.Inventory
                             resolvedItemId,
                             1,
                             out var usableCountState))
+                    {
+                        return false;
+                    }
+
+                    if (applyEffect != null
+                        && !applyEffect(connection, transaction, resolvedItemId))
                     {
                         return false;
                     }
