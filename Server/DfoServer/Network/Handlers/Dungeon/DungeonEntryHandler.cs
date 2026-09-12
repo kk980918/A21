@@ -3724,6 +3724,26 @@ namespace DfoServer.Network.Handlers.Dungeon
                     EntryCostFailureKind.MissingPermission);
                 return false;
             }
+            if (Game.Dungeon.DungeonFatigueService
+                    .RequiresAdmissionBalance(run))
+            {
+                if (!_svc.Fatigue.TryCanEnter(
+                        session.Player.CharacterId,
+                        out var hasFatigue))
+                {
+                    validation = new EntryCostResult().Fail(
+                        "fatigue state unavailable",
+                        EntryCostFailureKind.InvalidState);
+                    return false;
+                }
+                if (!hasFatigue)
+                {
+                    validation = new EntryCostResult().Fail(
+                        "fatigue exhausted",
+                        EntryCostFailureKind.InsufficientFatigue);
+                    return false;
+                }
+            }
             if (!TryLoadEntryQuestSets(
                     session.Player.CharacterId,
                     out var activeQuestIds,
@@ -4472,6 +4492,8 @@ namespace DfoServer.Network.Handlers.Dungeon
             {
                 case EntryCostFailureKind.MissingRequiredItem:
                     return DungeonAdmissionReject.MissingRequiredItem(memberSlot);
+                case EntryCostFailureKind.InsufficientFatigue:
+                    return DungeonAdmissionReject.InsufficientFatigue(memberSlot);
                 case EntryCostFailureKind.MissingPermission:
                     return DungeonAdmissionReject.MissingPermission(memberSlot);
                 case EntryCostFailureKind.Unavailable:

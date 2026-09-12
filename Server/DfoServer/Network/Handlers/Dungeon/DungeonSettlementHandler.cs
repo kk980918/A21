@@ -34,7 +34,6 @@ namespace DfoServer.Network.Handlers.Dungeon
         private const int SetPlayResultRankPointOffset = 10;
         // 成长之契约经验加成从 PVF premiumlist_new.etc 读取(PremiumEffectProvider)。
         private const float BlackDiamondBonusRate = 0.10f;
-        private static readonly int[] BlackDiamondPremiumTypes = { 1, 17 };
 
         internal DungeonSettlementHandler(
             DungeonSharedServices svc,
@@ -1929,7 +1928,7 @@ namespace DfoServer.Network.Handlers.Dungeon
             var premiumEffects = Game.Premium.PremiumEffectProvider.GetCombinedEffects(connStr, accountId);
             var growthContractBonus = premiumEffects.ComputeBonusExp(
                 storyAdjustedBaseExp);
-            var blackDiamondBonus = PremiumService.HasActivePremium(connStr, accountId, BlackDiamondPremiumTypes)
+            var blackDiamondBonus = PremiumService.HasActiveBlackDiamond(connStr, accountId)
                 ? ToUInt32Floor(
                     storyAdjustedBaseExp * BlackDiamondBonusRate)
                 : 0;

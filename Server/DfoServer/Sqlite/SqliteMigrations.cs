@@ -49,6 +49,7 @@ namespace DfoServer.Sqlite
                 new MigrationStep(24, "add_license_dungeon_period_state", ApplyLicenseDungeonPeriodState),
                 new MigrationStep(25, "add_license_dungeon_progress", ApplyLicenseDungeonProgress),
                 new MigrationStep(26, "add_license_dungeon_unlock_conditions", ApplyLicenseDungeonUnlockConditions),
+                new MigrationStep(27, "complete_character_remaining_fatigue", ApplyCharacterRemainingFatigue),
             };
 
         internal static int CurrentVersion =>
@@ -1196,6 +1197,71 @@ DROP TABLE IF EXISTS character_experience_bonus_effects;");
             // v22 was published once with a provisional per-character reset
             // column. Keep the version for existing databases, but the
             // active reset gate is account_daily_reset.last_logout_at.
+        }
+
+        private static void ApplyCharacterRemainingFatigue(
+            SqliteConnection connection,
+            SqliteTransaction transaction)
+        {
+            var hadLegacyFatigue = ColumnExists(
+                connection,
+                transaction,
+                "characters",
+                "fatigue");
+            AddColumnIfMissing(
+                connection,
+                transaction,
+                "characters",
+                "fatigue",
+                "INTEGER NOT NULL DEFAULT 156");
+            AddColumnIfMissing(
+                connection,
+                transaction,
+                "characters",
+                "usedFatigue",
+                "INTEGER NOT NULL DEFAULT 0");
+            AddColumnIfMissing(
+                connection,
+                transaction,
+                "characters",
+                "maxFatigue",
+                "INTEGER NOT NULL DEFAULT 156");
+            AddColumnIfMissing(
+                connection,
+                transaction,
+                "characters",
+                "fatigue_reset_day",
+                "INTEGER NOT NULL DEFAULT 0");
+
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var gameDate = DateTime.UtcNow.AddHours(2);
+            var dayId = gameDate.Year * 10000
+                + gameDate.Month * 100
+                + gameDate.Day;
+            ExecuteSql(
+                connection,
+                transaction,
+                $@"
+UPDATE characters
+SET maxFatigue = CASE WHEN EXISTS (
+        SELECT 1
+        FROM account_premiums p
+        WHERE p.account_id = characters.account_id
+          AND p.premium_type IN (1, 17)
+          AND p.end_time > {now}
+    ) THEN 188 ELSE 156 END;
+UPDATE characters
+SET fatigue = {(hadLegacyFatigue ? @"maxFatigue - CASE
+        WHEN fatigue < 0 THEN 0
+        WHEN fatigue > maxFatigue THEN maxFatigue
+        ELSE fatigue
+    END" : "maxFatigue")},
+    usedFatigue = CASE
+        WHEN usedFatigue < 0 THEN 0
+        WHEN usedFatigue > 65535 THEN 65535
+        ELSE usedFatigue
+    END,
+    fatigue_reset_day = {dayId};");
         }
 
         private static void ImportCharacterNewItems(

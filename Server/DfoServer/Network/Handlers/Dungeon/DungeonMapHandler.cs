@@ -186,6 +186,51 @@ namespace DfoServer.Network.Handlers.Dungeon
             for (var i = 0; i < preparedFollowers.Count; i++)
                 loadingParticipants.Add(preparedFollowers[i].RunIdentity);
 
+            if (Game.Dungeon.DungeonFatigueService
+                    .ConsumesOnRoomMove(run))
+            {
+                var fatigueCharacters = new List<int>
+                {
+                    session.Player.CharacterId,
+                };
+                for (var i = 0; i < preparedFollowers.Count; i++)
+                {
+                    fatigueCharacters.Add(
+                        preparedFollowers[i].Session.Player.CharacterId);
+                }
+
+                if (!_svc.Fatigue.TryConsumeRooms(
+                        fatigueCharacters,
+                        out var fatigueSnapshots))
+                {
+                    run.TryCancelLoadingProjection(loadingProjectionId);
+                    for (var i = 0; i < preparedFollowers.Count; i++)
+                    {
+                        preparedFollowers[i].Run.TryCancelLoadingProjection(
+                            loadingProjectionId);
+                    }
+                    FileLogger.Log(
+                        $"[DungeonHandler] MOVE_MAP fatigue persistence failed: " +
+                        $"cid={session.Player.CharacterId} " +
+                        $"instance={run.PartyDungeonInstanceId}");
+                    return;
+                }
+
+                await SendFatigueAsync(
+                    session,
+                    leaderRunIdentity,
+                    fatigueSnapshots[session.Player.CharacterId]);
+                for (var i = 0; i < preparedFollowers.Count; i++)
+                {
+                    var follower = preparedFollowers[i];
+                    await SendFatigueAsync(
+                        follower.Session,
+                        follower.RunIdentity,
+                        fatigueSnapshots[
+                            follower.Session.Player.CharacterId]);
+                }
+            }
+
             int overrideMapId = -1;
 
             if (req.MoveMode == 1)
@@ -241,6 +286,43 @@ namespace DfoServer.Network.Handlers.Dungeon
                 loadingProjectionId,
                 preparedFollowers,
                 loadingParticipants);
+        }
+
+        private static async Task SendFatigueAsync(
+            EnhancedClientSession session,
+            DungeonRunIdentity runIdentity,
+            Game.Dungeon.DungeonFatigueSnapshot snapshot)
+        {
+            if (session?.Player == null)
+                return;
+
+            var packet = GamePacketEnvelopeBuilder.Build(
+                0,
+                (ushort)NotiPacketTypeA21.FATIGUE,
+                DungeonNotificationBuilder.BuildFatigue(
+                    snapshot.Remaining,
+                    snapshot.Used,
+                    snapshot.Maximum,
+                    fatigueBattery: 0,
+                    fatigueGrownUpBuff: 0));
+            try
+            {
+                if (!await session.TrySendPacketAsync(
+                        packet,
+                        CancellationToken.None,
+                        () => session.Player.IsCurrentDungeonRun(runIdentity)))
+                {
+                    FileLogger.Log(
+                        $"[DungeonHandler] FATIGUE notification dropped: " +
+                        $"cid={snapshot.CharacterId}");
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Log(
+                    $"[DungeonHandler] FATIGUE notification failed: " +
+                    $"cid={snapshot.CharacterId} error={ex.Message}");
+            }
         }
 
         // 队长换图时把同队【在副本里】的成员也移到同一房间(服务端驱动, 队员副本=队长迷宫拷贝)。⚠️待真机验证。
