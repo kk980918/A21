@@ -4,6 +4,7 @@ using DfoServer.Game.DailyReset;
 using DfoServer.Game.Dungeon;
 using DfoServer.Infrastructure;
 using DfoServer.Network.Builders;
+using DfoServer.Network.Parsers.Dungeon;
 using DfoServer.Sqlite;
 using Microsoft.Data.Sqlite;
 
@@ -74,6 +75,33 @@ namespace DfoServer.SelfTests
 
         private static void VerifyDungeonFatiguePolicy(ref int failures)
         {
+            var practiceRequest = SelectDungeonRequest.Parse(new byte[]
+            {
+                0x9C, 0x00, 0x00, 0x00,
+                0x01, 0x00, 0x01,
+                0xFF, 0xFF,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            });
+            var practice = new DungeonRun(
+                (short)practiceRequest.DungeonId,
+                practiceRequest.Difficulty)
+            {
+                PracticeMode = practiceRequest.PracticeMode,
+            };
+            var partyPractice = new DungeonRun();
+            new DungeonSelectionSnapshot
+            {
+                PracticeMode = practice.PracticeMode,
+            }.ApplyTo(partyPractice);
+            Check(
+                "captured A21 practice selection skips fatigue",
+                practiceRequest.PracticeMode
+                && !new SelectDungeonRequest(156, 1, 1, 1).PracticeMode
+                && !DungeonFatigueService.RequiresAdmissionBalance(practice)
+                && !DungeonFatigueService.ConsumesOnRoomMove(practice)
+                && !DungeonFatigueService.ConsumesOnRoomMove(partyPractice),
+                ref failures);
+
             var ordinary = new DungeonRun(1, 0);
             Check(
                 "ordinary dungeon checks and consumes fatigue",

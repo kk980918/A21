@@ -138,6 +138,7 @@ namespace DfoServer.Game.Dungeon
         internal int LinkedDungeonNextRate { get; set; }
         internal int LinkedDungeonNextCondition { get; set; }
 
+        internal bool PracticeMode { get; set; }
         internal bool HellMode { get; set; }
         internal byte HellPartyMode { get; set; }
         internal bool VeryDifficultHell { get; set; }

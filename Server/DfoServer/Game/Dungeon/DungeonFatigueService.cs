@@ -339,6 +339,7 @@ WHERE character_id=@cid;";
         private static bool IsRuntimeExempt(DungeonRun run)
             => run == null
                 || run.Tower != null
+                || run.PracticeMode
                 || run.RewardPolicy.Kind
                     == DungeonRewardPolicyKind.InteractiveTraining
                 || GameWorld.Dungeon.TryGetTowerOfDespairFloor(

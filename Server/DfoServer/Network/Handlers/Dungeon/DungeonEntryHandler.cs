@@ -2495,6 +2495,7 @@ namespace DfoServer.Network.Handlers.Dungeon
             }
             var run = session.Player.CurrentRun;
             var runIdentity = run.CaptureIdentity();
+            run.PracticeMode = !isA21TutorialEntry && req.PracticeMode;
             run.AnotherAradActive = anotherAradSelection.HasValue;
             run.AnotherAradWrapperDungeonId = anotherAradSelection.HasValue
                 ? anotherAradSelection.Value.WrapperDungeonId
@@ -2593,7 +2594,8 @@ namespace DfoServer.Network.Handlers.Dungeon
                 $"[DungeonHandler] SELECT_DUNGEON route: " +
                 $"cid={session.Player.CharacterId} dungeon={req.DungeonId} " +
                 $"{mazeSelectionDiagnostic ?? $"difficulty={req.Difficulty} selectedMaze={selection.Index}"} " +
-                $"flags=({req.HellPartyRequestFlag},{req.HellPartyDifficultyFlag}) hell={run.HellMode} " +
+                $"flags=({req.HellPartyRequestFlag},{req.HellPartyDifficultyFlag}) " +
+                $"practice={run.PracticeMode} hell={run.HellMode} " +
                 $"questConnected={run.MazeQuestConnected} " +
                 $"activeQuestMaze={run.ActiveQuestMazeQuestId} " +
                 $"start=({run.MazeStartX},{run.MazeStartY}) startMap={run.MazeStartMapId} " +
@@ -3562,6 +3564,7 @@ namespace DfoServer.Network.Handlers.Dungeon
             return new DungeonSelectionSnapshot
             {
                 MazeIndex = run.MazeIndex,
+                PracticeMode = run.PracticeMode,
                 AnotherAradActive = run.AnotherAradActive,
                 AnotherAradWrapperDungeonId = run.AnotherAradWrapperDungeonId,
                 AnotherAradHistoricalDungeonId = run.AnotherAradHistoricalDungeonId,

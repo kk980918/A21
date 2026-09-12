@@ -13,6 +13,7 @@ namespace DfoServer.Network.Parsers.Dungeon
         public bool HasNonZeroTrailingBytes { get; }
         public byte HellPartyRequestFlag => Flag1;
         public byte HellPartyDifficultyFlag => Flag2;
+        public bool PracticeMode => HellPartyRequestFlag == 0 && Flag2 != 0;
 
         public SelectDungeonRequest(
             int dungeonId,

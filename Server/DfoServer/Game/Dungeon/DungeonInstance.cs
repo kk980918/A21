@@ -13,6 +13,7 @@ namespace DfoServer.Game.Dungeon
         private ClearConditionState _clearConditionTemplate;
 
         public int MazeIndex { get; init; } = -1;
+        internal bool PracticeMode { get; init; }
         internal bool AnotherAradActive { get; init; }
         internal int AnotherAradWrapperDungeonId { get; init; }
         internal int AnotherAradHistoricalDungeonId { get; init; }
@@ -78,6 +79,7 @@ namespace DfoServer.Game.Dungeon
                 throw new ArgumentNullException(nameof(run));
 
             run.MazeIndex = MazeIndex;
+            run.PracticeMode = PracticeMode;
             run.AnotherAradActive = AnotherAradActive;
             run.AnotherAradWrapperDungeonId = AnotherAradWrapperDungeonId;
             run.AnotherAradHistoricalDungeonId = AnotherAradHistoricalDungeonId;
