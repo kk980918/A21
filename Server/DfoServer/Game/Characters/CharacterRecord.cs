@@ -28,6 +28,10 @@ namespace DfoServer.Game.Characters
         public byte AuraSkinFlag { get; set; }
         public int BonusSp { get; set; }
         public int BonusTp { get; set; }
+        public int Fatigue { get; set; } = 156;
+        public int UsedFatigue { get; set; }
+        public int MaxFatigue { get; set; } = 156;
+        public int FatigueResetDay { get; set; }
         public byte SlotIndex { get; set; }
         public bool Deleted { get; set; }
         public DateTime CreatedAt { get; set; }

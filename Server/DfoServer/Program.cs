@@ -44,6 +44,7 @@ namespace DfoServer
             ("--selftest-a21-death-tower-protocol", SelfTests.A21DeathTowerProtocolSelfTest.Run),
             ("--selftest-a21-special-dungeon-protocol", SelfTests.A21SpecialDungeonProtocolSelfTest.Run),
             ("--selftest-dungeon-entry-limit", SelfTests.DungeonEntryLimitServiceSelfTest.Run),
+            ("--selftest-dungeon-fatigue", SelfTests.DungeonFatigueSelfTest.Run),
             ("--selftest-item-state", SelfTests.ItemStateSelfTest.Run),
             ("--selftest-inventory-sort-condition", SelfTests.InventorySortConditionSelfTest.Run),
             ("--selftest-dungeon-experience", SelfTests.DungeonExperienceSelfTest.Run),
@@ -292,6 +293,9 @@ namespace DfoServer
 
             server.Start(portConfigs);
 
+            new Game.Dungeon.DungeonFatigueService(database).RegisterClock(
+                Infrastructure.ClockService.Instance,
+                sessionDirectory);
             Game.Inventory.InventoryPersistenceService.RegisterClock(Infrastructure.ClockService.Instance);
             Infrastructure.ClockService.Instance.Start();
 

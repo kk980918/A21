@@ -14,6 +14,7 @@ namespace DfoServer.Game.Premium
     public static class PremiumService
     {
         public const ushort DefaultServiceType = 1;
+        private static readonly int[] BlackDiamondPremiumTypes = { 1, 17 };
 
         private const int PremiumServiceEntryExpireBase = 6;
         private const int PremiumServiceEntryUsedCountBase = 10;
@@ -444,6 +445,45 @@ LIMIT 1;";
                     cmd.Parameters.AddWithValue("@now", now);
                     return cmd.ExecuteScalar() != null;
                 }
+            }
+        }
+
+        internal static bool HasActiveBlackDiamond(
+            string connectionString,
+            int accountId)
+            => HasActivePremium(
+                connectionString,
+                accountId,
+                BlackDiamondPremiumTypes);
+
+        internal static bool HasActiveBlackDiamond(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            int accountId,
+            long now)
+        {
+            if (connection == null || accountId <= 0)
+                return false;
+
+            using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = @"
+SELECT 1
+FROM account_premiums
+WHERE account_id=@aid
+  AND end_time>@now
+  AND premium_type IN (@type0, @type1)
+LIMIT 1;";
+                command.Parameters.AddWithValue("@aid", accountId);
+                command.Parameters.AddWithValue("@now", now);
+                command.Parameters.AddWithValue(
+                    "@type0",
+                    BlackDiamondPremiumTypes[0]);
+                command.Parameters.AddWithValue(
+                    "@type1",
+                    BlackDiamondPremiumTypes[1]);
+                return command.ExecuteScalar() != null;
             }
         }
 

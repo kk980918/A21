@@ -31,6 +31,27 @@ namespace DfoServer.Network.Builders
         public static byte[] BuildEplpRechallengeReady()
             => new[] { EplpRechallengeReadyResult };
 
+        public static byte[] BuildFatigue(
+            int remaining,
+            int used,
+            int maximum,
+            ushort fatigueBattery = 0,
+            ushort fatigueGrownUpBuff = 0)
+        {
+            var projectedMaximum = Math.Clamp(maximum, 0, ushort.MaxValue);
+            var projectedRemaining = Math.Clamp(
+                remaining,
+                0,
+                projectedMaximum);
+            var writer = new GamePacketWriter();
+            writer.WriteUInt16((ushort)(projectedMaximum - projectedRemaining));
+            writer.WriteUInt16((ushort)projectedMaximum);
+            writer.WriteUInt16((ushort)Math.Clamp(used, 0, ushort.MaxValue));
+            writer.WriteUInt16(fatigueBattery);
+            writer.WriteUInt16(fatigueGrownUpBuff);
+            return writer.ToArray();
+        }
+
         // NOTI 28 (0x001C) DUNGEON_INFO
         // A21 的固定前缀从 u32 dungeonId 开始。客户端 reader 还会读取
         // 一段可变的 minimap group 列表；无图标时官方样本的组数为 0，

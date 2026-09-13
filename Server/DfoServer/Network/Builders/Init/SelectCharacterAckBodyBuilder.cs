@@ -50,13 +50,24 @@ namespace DfoServer.Network.Builders
             // [9] u16 uniqueId
             writer.WriteInt16(record != null ? (short)record.CharacterId : (short)initSnap.AckUniqueId);
 
-            // [11] i16 totalFatigue
-            writer.WriteInt16(0);
+            // [11] u16 totalFatigue
+            var maximumFatigue = (ushort)Math.Clamp(
+                record.MaxFatigue,
+                0,
+                ushort.MaxValue);
+            var remainingFatigue = Math.Clamp(
+                record.Fatigue,
+                0,
+                maximumFatigue);
+            writer.WriteUInt16((ushort)(maximumFatigue - remainingFatigue));
 
-            writer.WriteInt16(188);
+            writer.WriteUInt16(maximumFatigue);
 
-            // [15] i16 usedFatigue
-            writer.WriteInt16(0);
+            // [15] u16 usedFatigue
+            writer.WriteUInt16((ushort)Math.Clamp(
+                record.UsedFatigue,
+                0,
+                ushort.MaxValue));
 
             // [17] u8 premiumCount + N × (u8 type + u8[8] endTime)
             var premiums = initSnap.AckPremiums;

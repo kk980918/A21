@@ -224,6 +224,7 @@ namespace DfoServer.Game.Dungeon
         internal int TimeSpiralHiddenBossY { get => Mechanisms.TimeSpiralHiddenBossY; set => Mechanisms.TimeSpiralHiddenBossY = value; }
         internal string TimeSpiralHiddenBossSource { get => Mechanisms.TimeSpiralHiddenBossSource; set => Mechanisms.TimeSpiralHiddenBossSource = value; }
 
+        internal bool PracticeMode { get => Selection.PracticeMode; set => Selection.PracticeMode = value; }
         public bool HellMode { get => Selection.HellMode; set => Selection.HellMode = value; }
         internal bool TutorialEntryProjectionPending
         {

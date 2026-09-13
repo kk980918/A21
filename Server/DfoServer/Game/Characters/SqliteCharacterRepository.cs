@@ -376,7 +376,8 @@ SELECT character_id, account_id, CAST(name AS BLOB), job, grow_type, level,
        town_id, area_id, pos_x, pos_y, direction, area_state, appearance_blob,
        delete_flag, created_at, updated_at, exp, ex_equip_slot_stat,
        pvp_grade, pvp_rating_grade, user_state, bonus_sp, bonus_tp, slot_index,
-       aura_skin_flag, growup_change_count
+       aura_skin_flag, growup_change_count,
+       fatigue, usedFatigue, maxFatigue, fatigue_reset_day
 FROM characters";
 
         private static CharacterRecord Map(IDataRecord r)
@@ -410,6 +411,10 @@ FROM characters";
                 SlotIndex = r.FieldCount > 23 && !r.IsDBNull(23) ? (byte)r.GetInt32(23) : (byte)0,
                 AuraSkinFlag = r.FieldCount > 24 && !r.IsDBNull(24) ? (byte)r.GetInt32(24) : (byte)0,
                 GrowupChangeCount = r.FieldCount > 25 && !r.IsDBNull(25) ? r.GetInt32(25) : 0,
+                Fatigue = r.FieldCount > 26 && !r.IsDBNull(26) ? r.GetInt32(26) : 156,
+                UsedFatigue = r.FieldCount > 27 && !r.IsDBNull(27) ? r.GetInt32(27) : 0,
+                MaxFatigue = r.FieldCount > 28 && !r.IsDBNull(28) ? r.GetInt32(28) : 156,
+                FatigueResetDay = r.FieldCount > 29 && !r.IsDBNull(29) ? r.GetInt32(29) : 0,
             };
         }
 

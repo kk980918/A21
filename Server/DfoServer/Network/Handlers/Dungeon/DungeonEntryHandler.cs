@@ -2496,6 +2496,7 @@ namespace DfoServer.Network.Handlers.Dungeon
             }
             var run = session.Player.CurrentRun;
             var runIdentity = run.CaptureIdentity();
+            run.PracticeMode = !isA21TutorialEntry && req.PracticeMode;
             run.AnotherAradActive = anotherAradSelection.HasValue;
             run.AnotherAradWrapperDungeonId = anotherAradSelection.HasValue
                 ? anotherAradSelection.Value.WrapperDungeonId
@@ -2594,7 +2595,8 @@ namespace DfoServer.Network.Handlers.Dungeon
                 $"[DungeonHandler] SELECT_DUNGEON route: " +
                 $"cid={session.Player.CharacterId} dungeon={req.DungeonId} " +
                 $"{mazeSelectionDiagnostic ?? $"difficulty={req.Difficulty} selectedMaze={selection.Index}"} " +
-                $"flags=({req.HellPartyRequestFlag},{req.HellPartyDifficultyFlag}) hell={run.HellMode} " +
+                $"flags=({req.HellPartyRequestFlag},{req.HellPartyDifficultyFlag}) " +
+                $"practice={run.PracticeMode} hell={run.HellMode} " +
                 $"questConnected={run.MazeQuestConnected} " +
                 $"activeQuestMaze={run.ActiveQuestMazeQuestId} " +
                 $"start=({run.MazeStartX},{run.MazeStartY}) startMap={run.MazeStartMapId} " +
@@ -3561,6 +3563,7 @@ namespace DfoServer.Network.Handlers.Dungeon
             return new DungeonSelectionSnapshot
             {
                 MazeIndex = run.MazeIndex,
+                PracticeMode = run.PracticeMode,
                 AnotherAradActive = run.AnotherAradActive,
                 AnotherAradWrapperDungeonId = run.AnotherAradWrapperDungeonId,
                 AnotherAradHistoricalDungeonId = run.AnotherAradHistoricalDungeonId,
@@ -3722,6 +3725,26 @@ namespace DfoServer.Network.Handlers.Dungeon
                     "mercenary content restricted",
                     EntryCostFailureKind.MissingPermission);
                 return false;
+            }
+            if (Game.Dungeon.DungeonFatigueService
+                    .RequiresAdmissionBalance(run))
+            {
+                if (!_svc.Fatigue.TryCanEnter(
+                        session.Player.CharacterId,
+                        out var hasFatigue))
+                {
+                    validation = new EntryCostResult().Fail(
+                        "fatigue state unavailable",
+                        EntryCostFailureKind.InvalidState);
+                    return false;
+                }
+                if (!hasFatigue)
+                {
+                    validation = new EntryCostResult().Fail(
+                        "fatigue exhausted",
+                        EntryCostFailureKind.InsufficientFatigue);
+                    return false;
+                }
             }
             if (!TryLoadEntryQuestSets(
                     session.Player.CharacterId,
@@ -4471,6 +4494,8 @@ namespace DfoServer.Network.Handlers.Dungeon
             {
                 case EntryCostFailureKind.MissingRequiredItem:
                     return DungeonAdmissionReject.MissingRequiredItem(memberSlot);
+                case EntryCostFailureKind.InsufficientFatigue:
+                    return DungeonAdmissionReject.InsufficientFatigue(memberSlot);
                 case EntryCostFailureKind.MissingPermission:
                     return DungeonAdmissionReject.MissingPermission(memberSlot);
                 case EntryCostFailureKind.Unavailable:

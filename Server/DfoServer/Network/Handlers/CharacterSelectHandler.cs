@@ -50,6 +50,7 @@ namespace DfoServer.Network.Handlers
         private readonly Network.Builders.InitPacketBuilderRegistry
             _initPacketBuilders;
         private readonly QuestAssistantGiftService _questAssistantGifts;
+        private readonly Game.Dungeon.DungeonFatigueService _fatigue;
 
         public string ProtocolName => "GameProtocol";
 
@@ -108,6 +109,7 @@ namespace DfoServer.Network.Handlers
                 _database);
             _initPacketBuilders = new Network.Builders.InitPacketBuilderRegistry(
                 _database, _sessions);
+            _fatigue = new Game.Dungeon.DungeonFatigueService(_database);
             if (mailboxService != null)
             {
                 _questAssistantGifts = new QuestAssistantGiftService(
@@ -452,6 +454,14 @@ namespace DfoServer.Network.Handlers
             }
             if (!TryApplyAccountDailyReset(ownerAcctId))
             {
+                session.Close();
+                return;
+            }
+            if (!_fatigue.TryLoad(ownerCharId, out _))
+            {
+                FileLogger.Log(
+                    $"[{ProtocolName}] Select character fatigue load failed " +
+                    $"cid={ownerCharId}");
                 session.Close();
                 return;
             }

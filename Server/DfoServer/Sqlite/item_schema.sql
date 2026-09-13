@@ -55,6 +55,11 @@ CREATE TABLE IF NOT EXISTS characters (
     aura_skin_flag INTEGER NOT NULL DEFAULT 0,
     bonus_sp INTEGER NOT NULL DEFAULT 0,
     bonus_tp INTEGER NOT NULL DEFAULT 0,
+    -- fatigue 保存剩余值；协议投影时换算成客户端使用的已消耗值。
+    fatigue INTEGER NOT NULL DEFAULT 156,
+    usedFatigue INTEGER NOT NULL DEFAULT 0,
+    maxFatigue INTEGER NOT NULL DEFAULT 156,
+    fatigue_reset_day INTEGER NOT NULL DEFAULT 0,
     slot_index INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

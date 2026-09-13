@@ -1778,6 +1778,7 @@ namespace DfoServer.Network.Handlers.Dungeon
                     out var tower))
                 return false;
             if (!DeathTowerInventoryCommandParser.TryParseUseStackable(
+                    header.type,
                     body,
                     out var command))
                 return true;
@@ -1821,7 +1822,7 @@ namespace DfoServer.Network.Handlers.Dungeon
             {
                 await session.SendPacketAsync(GamePacketEnvelopeBuilder.Build(
                     0x01,
-                    0x002C,
+                    header.type,
                     UseStackableAckBuilder.BuildError(
                         (byte)command.ListType,
                         command.InstanceValue,
@@ -1833,7 +1834,7 @@ namespace DfoServer.Network.Handlers.Dungeon
 
             await session.SendPacketAsync(GamePacketEnvelopeBuilder.Build(
                 0x01,
-                0x002C,
+                header.type,
                 UseStackableAckBuilder.BuildSuccess(
                     command.SlotIndex,
                     (byte)command.ListType,
