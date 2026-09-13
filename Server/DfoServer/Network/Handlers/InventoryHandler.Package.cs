@@ -561,7 +561,9 @@ namespace DfoServer.Network.Handlers
                     listType,
                     slotIndex);
             }
-            await ChannelTownRestrictionSender.SendAsync(session);
+            await ChannelTownRestrictionSender.SendAsync(
+                session,
+                definition.TargetTownId);
             return true;
         }
 
