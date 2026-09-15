@@ -938,6 +938,7 @@ namespace DfoServer.Infrastructure
                 featureHandlers.EventTotalAttendance,
                 socialHandlers.PvpRoom,
                 inventory.InventoryRefreshSender,
+                inventory.MailboxService,
                 core.Database,
                 core.DailyResetService);
         }
