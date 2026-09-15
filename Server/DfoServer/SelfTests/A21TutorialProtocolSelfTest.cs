@@ -227,6 +227,24 @@ namespace DfoServer.SelfTests
                 && rentalCatalog[401030032] == 3,
                 ref failures);
 
+            // 租赁货架装备自带强化等级: [section] 每档 7 列, 第 3 列为强化等级; [group] 头给出档位。
+            var rentalTierFixture =
+                "[section]\n0 1 7 3 1 1 1 1 20 7 3 1 1 1\n[/section]\n"
+                + "[group]\n`[swordman]` 0\n[package selection]\n401000037 3 401030032 3\n[/package selection]\n[/group]\n"
+                + "[group]\n`[swordman]` 1\n[package selection]\n401000036 5\n[/package selection]\n[/group]\n";
+            var rentalTiers = RentalWeaponInventoryMapper.ParseRentalItemTiers(rentalTierFixture);
+            var rentalUpgrades = RentalWeaponInventoryMapper.ParseRentalSectionUpgrades(rentalTierFixture);
+            Check(
+                "A21 rental catalog parses item tiers and per-tier upgrade level",
+                rentalTiers.Count == 3
+                && rentalTiers[401000037] == 0
+                && rentalTiers[401030032] == 0
+                && rentalTiers[401000036] == 1
+                && rentalUpgrades.Count == 2
+                && rentalUpgrades[0] == 7
+                && rentalUpgrades[1] == 7,
+                ref failures);
+
             var rentalRequest = new byte[]
             {
                 0xAC, 0xF6, 0x19, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -295,6 +313,12 @@ namespace DfoServer.SelfTests
                 "A21 rental weapon normal-create writes ItemCore expire",
                 rentalCore != null
                 && rentalCore.ExpireTime == rentalExpireTime,
+                ref failures);
+            Check(
+                "A21 rental weapon normal-create applies catalog upgrade level",
+                rentalCore != null
+                && RentalWeaponInventoryMapper.GetRentalUpgradeLevel(401000037) > 0
+                && rentalCore.Upgrade == RentalWeaponInventoryMapper.GetRentalUpgradeLevel(401000037),
                 ref failures);
 
             var rentalSuccess = RentalWeaponPacketBuilder.BuildSuccessAck();
